@@ -5,11 +5,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Bot, LogOut, Settings, RefreshCw } from "lucide-react";
+import { Plus, Bot, LogOut, Settings, RefreshCw, Copy, Search, Filter, Layout } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 
@@ -21,6 +22,9 @@ type Project = {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  welcome_message?: string;
+  ai_character?: string;
+  primary_color?: string;
 };
 
 const Dashboard = () => {
@@ -33,6 +37,11 @@ const Dashboard = () => {
   const [newName, setNewName] = useState("");
   const [newDesc, setNewDesc] = useState("");
   const [creating, setCreating] = useState(false);
+  
+  // 検索・フィルター状態
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
+  const [sortBy, setSortBy] = useState<"name" | "created" | "updated">("updated");
 
   useEffect(() => {
     if (!authLoading && !user) navigate("/auth");
@@ -61,6 +70,9 @@ const Dashboard = () => {
       name: newName,
       description: newDesc || null,
       user_id: user.id,
+      welcome_message: "こんにちは！どのようなご用件でしょうか？",
+      ai_character: "あなたは親切で丁寧なAIアシスタントです。ユーザーの質問に分かりやすく答えてください。",
+      primary_color: "#0ea5e9",
     });
     setCreating(false);
     if (error) {
@@ -73,6 +85,47 @@ const Dashboard = () => {
       fetchProjects();
     }
   };
+
+  const handleClone = async (project: Project) => {
+    if (!user) return;
+    const { error } = await supabase.from("projects").insert({
+      name: `${project.name} (コピー)`,
+      description: project.description,
+      user_id: user.id,
+      target_urls: project.target_urls,
+      welcome_message: project.welcome_message || "こんにちは！どのようなご用件でしょうか？",
+      ai_character: project.ai_character || "あなたは親切で丁寧なAIアシスタントです。",
+      primary_color: project.primary_color || "#0ea5e9",
+    });
+    if (error) {
+      toast({ title: "エラー", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "プロジェクトをコピーしました" });
+      fetchProjects();
+    }
+  };
+
+  // フィルター・ソート処理
+  const filteredAndSortedProjects = projects
+    .filter(project => {
+      const matchesSearch = project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          (project.description?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false);
+      const matchesStatus = statusFilter === "all" ||
+                           (statusFilter === "active" && project.is_active) ||
+                           (statusFilter === "inactive" && !project.is_active);
+      return matchesSearch && matchesStatus;
+    })
+    .sort((a, b) => {
+      switch (sortBy) {
+        case "name":
+          return a.name.localeCompare(b.name);
+        case "created":
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        case "updated":
+        default:
+          return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+      }
+    });
 
   if (authLoading || loading) {
     return (
@@ -105,44 +158,93 @@ const Dashboard = () => {
             <h2 className="text-2xl font-bold">プロジェクト一覧</h2>
             <p className="text-muted-foreground">チャットボットプロジェクトを管理</p>
           </div>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="mr-2 h-4 w-4" />
-                新規作成
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>新しいプロジェクト</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleCreate} className="space-y-4">
-                <div className="space-y-2">
-                  <Label>プロジェクト名</Label>
-                  <Input value={newName} onChange={(e) => setNewName(e.target.value)} required placeholder="例: ○○株式会社サポートボット" />
-                </div>
-                <div className="space-y-2">
-                  <Label>説明（任意）</Label>
-                  <Textarea value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder="プロジェクトの概要" />
-                </div>
-                <Button type="submit" className="w-full" disabled={creating}>
-                  作成
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => navigate("/dashboard/templates")}>
+              <Layout className="mr-2 h-4 w-4" />
+              テンプレート
+            </Button>
+            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+              <DialogTrigger asChild>
+                <Button>
+                  <Plus className="mr-2 h-4 w-4" />
+                  新規作成
                 </Button>
-              </form>
-            </DialogContent>
-          </Dialog>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>新しいプロジェクト</DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleCreate} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>プロジェクト名</Label>
+                    <Input value={newName} onChange={(e) => setNewName(e.target.value)} required placeholder="例: ○○株式会社サポートボット" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>説明（任意）</Label>
+                    <Textarea value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder="プロジェクトの概要" />
+                  </div>
+                  <Button type="submit" className="w-full" disabled={creating}>
+                    作成
+                  </Button>
+                </form>
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
 
-        {projects.length === 0 ? (
+        {/* 検索・フィルター・ソート */}
+        <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="プロジェクト名や説明で検索..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+          <div className="flex gap-2">
+            <Select value={statusFilter} onValueChange={(value: "all" | "active" | "inactive") => setStatusFilter(value)}>
+              <SelectTrigger className="w-[140px]">
+                <Filter className="mr-2 h-4 w-4" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">すべて</SelectItem>
+                <SelectItem value="active">稼働中</SelectItem>
+                <SelectItem value="inactive">停止</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={sortBy} onValueChange={(value: "name" | "created" | "updated") => setSortBy(value)}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="updated">更新日順</SelectItem>
+                <SelectItem value="created">作成日順</SelectItem>
+                <SelectItem value="name">名前順</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        {filteredAndSortedProjects.length === 0 ? (
           <Card className="flex flex-col items-center justify-center p-12 text-center">
             <Bot className="mb-4 h-12 w-12 text-muted-foreground" />
-            <CardTitle className="mb-2">プロジェクトがありません</CardTitle>
-            <CardDescription>「新規作成」ボタンからチャットボットを作成しましょう</CardDescription>
+            <CardTitle className="mb-2">
+              {projects.length === 0 ? "プロジェクトがありません" : "条件に一致するプロジェクトがありません"}
+            </CardTitle>
+            <CardDescription>
+              {projects.length === 0 
+                ? "「新規作成」ボタンからチャットボットを作成しましょう"
+                : "検索条件を変更してください"
+              }
+            </CardDescription>
           </Card>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {projects.map((project) => (
-              <Card key={project.id} className="group cursor-pointer transition-shadow hover:shadow-md" onClick={() => navigate(`/dashboard/project/${project.id}`)}>
+            {filteredAndSortedProjects.map((project) => (
+              <Card key={project.id} className="group cursor-pointer transition-shadow hover:shadow-md">
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
                     <CardTitle className="text-base">{project.name}</CardTitle>
@@ -155,9 +257,33 @@ const Dashboard = () => {
                   )}
                 </CardHeader>
                 <CardContent>
-                  <div className="flex items-center justify-between text-sm text-muted-foreground">
+                  <div className="flex items-center justify-between text-sm text-muted-foreground mb-3">
                     <span>URL: {project.target_urls.length}件</span>
                     <span>{format(new Date(project.updated_at), "yyyy/MM/dd")}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="flex-1"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/dashboard/project/${project.id}`);
+                      }}
+                    >
+                      <Settings className="mr-2 h-3 w-3" />
+                      設定
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleClone(project);
+                      }}
+                    >
+                      <Copy className="h-3 w-3" />
+                    </Button>
                   </div>
                 </CardContent>
               </Card>

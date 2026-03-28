@@ -1,16 +1,18 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
-import { Bot, Send, RefreshCw, User } from "lucide-react";
+import { Bot, Send, RefreshCw, User, Mic, MicOff, Volume2, ThumbsUp, ThumbsDown, Copy, RotateCcw } from "lucide-react";
 
 type Message = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  timestamp: string;
+  feedback?: "up" | "down";
 };
 
 type ProjectInfo = {
@@ -34,6 +36,13 @@ const ChatBot = () => {
   const [sending, setSending] = useState(false);
   const [sessionId] = useState(() => crypto.randomUUID());
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  
+  // UI改善状態
+  const [isRecording, setIsRecording] = useState(false);
+  const [charCount, setCharCount] = useState(0);
+  const [isTyping, setIsTyping] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     const fetchProject = async () => {
@@ -54,13 +63,37 @@ const ChatBot = () => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // タイピング検出
+  useEffect(() => {
+    const typingTimer = setTimeout(() => {
+      setIsTyping(false);
+    }, 1000);
+
+    if (input.length > 0) {
+      setIsTyping(true);
+    }
+
+    return () => clearTimeout(typingTimer);
+  }, [input]);
+
+  // 文字数カウント
+  useEffect(() => {
+    setCharCount(input.length);
+  }, [input]);
+
   const handleSend = async () => {
     if (!input.trim() || !projectId || sending) return;
     const userMsg = input.trim();
     setInput("");
     setSending(true);
+    setCharCount(0);
 
-    const userMessage: Message = { id: crypto.randomUUID(), role: "user", content: userMsg };
+    const userMessage: Message = { 
+      id: crypto.randomUUID(), 
+      role: "user", 
+      content: userMsg,
+      timestamp: new Date().toISOString()
+    };
     setMessages((prev) => [...prev, userMessage]);
 
     // Save user message to DB
@@ -108,7 +141,12 @@ const ChatBot = () => {
       const assistantId = crypto.randomUUID();
 
       // Add empty assistant message
-      setMessages((prev) => [...prev, { id: assistantId, role: "assistant", content: "" }]);
+      setMessages((prev) => [...prev, { 
+        id: assistantId, 
+        role: "assistant", 
+        content: "",
+        timestamp: new Date().toISOString()
+      }]);
 
       let streamDone = false;
       while (!streamDone) {
@@ -188,6 +226,80 @@ const ChatBot = () => {
     }
   };
 
+  // UI改善機能
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  }, [input, sending]);
+
+  const handleCopyMessage = useCallback((content: string) => {
+    navigator.clipboard.writeText(content);
+    toast({ title: "コピーしました" });
+  }, []);
+
+  const handleFeedback = useCallback((messageId: string, feedback: "up" | "down") => {
+    setMessages(prev => prev.map(msg => 
+      msg.id === messageId ? { ...msg, feedback } : msg
+    ));
+    toast({ title: feedback === "up" ? "高く評価しました" : "低く評価しました" });
+  }, []);
+
+  const handleClearChat = useCallback(() => {
+    setMessages([]);
+    toast({ title: "チャットをクリアしました" });
+  }, []);
+
+  const handleVoiceInput = useCallback(() => {
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+      toast({ title: "音声認識に対応していません", variant: "destructive" });
+      return;
+    }
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    
+    recognition.lang = 'ja-JP';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    recognition.onstart = () => {
+      setIsRecording(true);
+      toast({ title: "音声認識を開始しました" });
+    };
+
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      setInput(transcript);
+      setIsRecording(false);
+      toast({ title: "音声認識が完了しました" });
+    };
+
+    recognition.onerror = () => {
+      setIsRecording(false);
+      toast({ title: "音声認識に失敗しました", variant: "destructive" });
+    };
+
+    recognition.onend = () => {
+      setIsRecording(false);
+    };
+
+    recognition.start();
+  }, []);
+
+  const handleTextToSpeech = useCallback((text: string) => {
+    if (!('speechSynthesis' in window)) {
+      toast({ title: "音声読み上げに対応していません", variant: "destructive" });
+      return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'ja-JP';
+    utterance.rate = 0.9;
+    speechSynthesis.speak(utterance);
+  }, []);
+
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
@@ -212,13 +324,27 @@ const ChatBot = () => {
   return (
     <div className="flex h-screen flex-col bg-background">
       {/* Header */}
-      <div className="flex items-center gap-3 border-b px-4 py-3" style={{ borderBottomColor: themeColor + "30" }}>
-        <div className="flex h-9 w-9 items-center justify-center rounded-full" style={{ backgroundColor: themeColor }}>
-          <Bot className="h-5 w-5 text-white" />
+      <div className="flex items-center justify-between border-b px-4 py-3" style={{ borderBottomColor: themeColor + "30" }}>
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-full" style={{ backgroundColor: themeColor }}>
+            <Bot className="h-5 w-5 text-white" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold">{project.name}</p>
+            <p className="text-xs text-muted-foreground">
+              {isTyping ? "入力中..." : "オンライン"}
+            </p>
+          </div>
         </div>
-        <div>
-          <p className="text-sm font-semibold">{project.name}</p>
-          <p className="text-xs text-muted-foreground">オンライン</p>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleClearChat}
+            className="h-8 w-8"
+          >
+            <RotateCcw className="h-4 w-4" />
+          </Button>
         </div>
       </div>
 
@@ -246,15 +372,57 @@ const ChatBot = () => {
                   <User className="h-4 w-4 text-muted-foreground" />
                 </div>
               )}
-              <div
-                className={`rounded-2xl px-4 py-2.5 max-w-[80%] ${
-                  msg.role === "user"
-                    ? "rounded-tr-sm text-white"
-                    : "rounded-tl-sm bg-chat-bot text-chat-bot-foreground"
-                }`}
-                style={msg.role === "user" ? { backgroundColor: themeColor } : undefined}
-              >
-                <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+              <div className="group relative max-w-[80%]">
+                <div
+                  className={`rounded-2xl px-4 py-2.5 ${
+                    msg.role === "user"
+                      ? "rounded-tr-sm text-white"
+                      : "rounded-tl-sm bg-chat-bot text-chat-bot-foreground"
+                  }`}
+                  style={msg.role === "user" ? { backgroundColor: themeColor } : undefined}
+                >
+                  <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                </div>
+                
+                {/* メッセージアクションボタン */}
+                <div className={`absolute ${msg.role === "user" ? "left-0 -ml-20" : "right-0 -mr-20"} top-0 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1`}>
+                  {msg.role === "assistant" && (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={() => handleCopyMessage(msg.content)}
+                      >
+                        <Copy className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={() => handleTextToSpeech(msg.content)}
+                      >
+                        <Volume2 className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className={`h-6 w-6 ${msg.feedback === "up" ? "text-green-600" : ""}`}
+                        onClick={() => handleFeedback(msg.id, "up")}
+                      >
+                        <ThumbsUp className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className={`h-6 w-6 ${msg.feedback === "down" ? "text-red-600" : ""}`}
+                        onClick={() => handleFeedback(msg.id, "down")}
+                      >
+                        <ThumbsDown className="h-3 w-3" />
+                      </Button>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
           ))}
@@ -283,17 +451,43 @@ const ChatBot = () => {
           onSubmit={(e) => { e.preventDefault(); handleSend(); }}
           className="mx-auto flex max-w-xl gap-2"
         >
-          <Input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="メッセージを入力..."
-            disabled={sending}
-            className="flex-1"
-          />
+          <div className="relative flex-1">
+            <Input
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="メッセージを入力... (Shift+Enterで改行)"
+              disabled={sending}
+              className="flex-1 pr-20"
+            />
+            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+              <span className="text-xs text-muted-foreground">
+                {charCount > 0 && `${charCount}文字`}
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={handleVoiceInput}
+                disabled={sending || isRecording}
+              >
+                {isRecording ? <MicOff className="h-3 w-3 text-red-500" /> : <Mic className="h-3 w-3" />}
+              </Button>
+            </div>
+          </div>
           <Button type="submit" disabled={sending || !input.trim()} size="icon" style={{ backgroundColor: themeColor }}>
             <Send className="h-4 w-4" />
           </Button>
         </form>
+        
+        {/* ヒント */}
+        <div className="mx-auto mt-2 max-w-xl">
+          <p className="text-xs text-muted-foreground text-center">
+            💡 ヒント: Enterで送信、Shift+Enterで改行、🎤音声入力も利用できます
+          </p>
+        </div>
       </div>
     </div>
   );

@@ -9,6 +9,8 @@ import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import ProjectSettings from "./pages/ProjectSettings";
 import ChatBot from "./pages/ChatBot";
+import Analytics from "./pages/Analytics";
+import Templates from "./pages/Templates";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -24,7 +26,9 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/dashboard/templates" element={<Templates />} />
             <Route path="/dashboard/project/:projectId" element={<ProjectSettings />} />
+            <Route path="/dashboard/project/:projectId/analytics" element={<Analytics />} />
             <Route path="/chat/:projectId" element={<ChatBot />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

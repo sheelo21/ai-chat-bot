@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, RefreshCw, Copy, Code, Bot, Globe, Sparkles, Clock } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, RefreshCw, Copy, Code, Bot, Globe, Sparkles, Clock, BarChart3, Download, Upload } from "lucide-react";
 import { format } from "date-fns";
 
 type Project = {
@@ -158,6 +158,105 @@ const ProjectSettings = () => {
     }
   };
 
+  const handleExportProject = async () => {
+    if (!project) return;
+    
+    const exportData = {
+      project: {
+        name: project.name,
+        description: project.description,
+        ai_character: project.ai_character,
+        primary_color: project.primary_color,
+        welcome_message: project.welcome_message,
+        target_urls: project.target_urls,
+      },
+      export_date: new Date().toISOString(),
+      version: "1.0"
+    };
+    
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${project.name}_backup_${format(new Date(), "yyyy-MM-dd")}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    toast({ title: "プロジェクトをエクスポートしました" });
+  };
+
+  const handleExportChatHistory = async () => {
+    if (!projectId) return;
+    
+    const { data: messages } = await supabase
+      .from("chat_messages")
+      .select("*")
+      .eq("project_id", projectId)
+      .order("created_at", { ascending: true });
+    
+    if (!messages || messages.length === 0) {
+      toast({ title: "チャット履歴がありません", variant: "destructive" });
+      return;
+    }
+    
+    const csvContent = [
+      ["日時", "セッションID", "役割", "内容"],
+      ...messages.map(msg => [
+        format(new Date(msg.created_at), "yyyy-MM-dd HH:mm:ss"),
+        msg.session_id,
+        msg.role === "user" ? "ユーザー" : "AI",
+        msg.content.replace(/"/g, '""')
+      ])
+    ].map(row => row.map(cell => `"${cell}"`).join(",")).join("\n");
+    
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${project?.name}_chat_history_${format(new Date(), "yyyy-MM-dd")}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    toast({ title: "チャット履歴をエクスポートしました" });
+  };
+
+  const handleImportProject = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const data = JSON.parse(e.target?.result as string);
+        if (data.project && user) {
+          const { error } = await supabase.from("projects").insert({
+            name: `${data.project.name} (インポート)`,
+            description: data.project.description,
+            user_id: user.id,
+            target_urls: data.project.target_urls,
+            ai_character: data.project.ai_character,
+            welcome_message: data.project.welcome_message,
+            primary_color: data.project.primary_color,
+          });
+          
+          if (error) {
+            toast({ title: "インポートエラー", description: error.message, variant: "destructive" });
+          } else {
+            toast({ title: "プロジェクトをインポートしました" });
+            fetchProject();
+          }
+        }
+      } catch (err) {
+        toast({ title: "ファイル形式エラー", description: "有効なJSONファイルではありません", variant: "destructive" });
+      }
+    };
+    reader.readAsText(file);
+  };
+
   const embedCode = `<iframe
   src="${window.location.origin}/chat/${projectId}"
   style="width: 400px; height: 600px; border: none; border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,0.1);"
@@ -210,6 +309,8 @@ const ProjectSettings = () => {
             <TabsTrigger value="ai" className="gap-2"><Sparkles className="h-4 w-4" />AI設定</TabsTrigger>
             <TabsTrigger value="crawl" className="gap-2"><RefreshCw className="h-4 w-4" />クローリング</TabsTrigger>
             <TabsTrigger value="embed" className="gap-2"><Code className="h-4 w-4" />埋め込み</TabsTrigger>
+            <TabsTrigger value="analytics" className="gap-2"><BarChart3 className="h-4 w-4" />分析</TabsTrigger>
+            <TabsTrigger value="backup" className="gap-2"><Download className="h-4 w-4" />バックアップ</TabsTrigger>
           </TabsList>
 
           <TabsContent value="general">
@@ -372,6 +473,79 @@ const ProjectSettings = () => {
                   >
                     チャットボットを別タブで開く →
                   </a>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="analytics">
+            <Card>
+              <CardHeader>
+                <CardTitle>チャット分析</CardTitle>
+                <CardDescription>チャットボットの利用状況とパフォーマンスを分析</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button 
+                  onClick={() => navigate(`/dashboard/project/${projectId}/analytics`)}
+                  className="w-full"
+                >
+                  <BarChart3 className="mr-2 h-4 w-4" />
+                  詳細分析画面へ
+                </Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        <TabsContent value="backup">
+            <Card>
+              <CardHeader>
+                <CardTitle>バックアップ・エクスポート</CardTitle>
+                <CardDescription>プロジェクトデータのバックアップと移行</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-3">
+                    <h4 className="font-medium">プロジェクト設定</h4>
+                    <Button 
+                      onClick={handleExportProject}
+                      variant="outline"
+                      className="w-full"
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      設定をエクスポート
+                    </Button>
+                    <div className="space-y-2">
+                      <Label htmlFor="import">プロジェクトをインポート</Label>
+                      <Input
+                        id="import"
+                        type="file"
+                        accept=".json"
+                        onChange={handleImportProject}
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    <h4 className="font-medium">チャット履歴</h4>
+                    <Button 
+                      onClick={handleExportChatHistory}
+                      variant="outline"
+                      className="w-full"
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      履歴をCSVエクスポート
+                    </Button>
+                    <p className="text-sm text-muted-foreground">
+                      チャット履歴をCSV形式でダウンロードできます
+                    </p>
+                  </div>
+                </div>
+                <div className="rounded-lg border p-4 bg-muted/30">
+                  <p className="text-sm font-medium mb-2">バックアップについて</p>
+                  <ul className="text-sm text-muted-foreground space-y-1">
+                    <li>• プロジェクト設定: AIキャラクター、URL、デザイン設定</li>
+                    <li>• チャット履歴: 日時、セッションID、役割、内容</li>
+                    <li>• インポート: エクスポートしたJSONファイルを復元</li>
+                  </ul>
                 </div>
               </CardContent>
             </Card>
