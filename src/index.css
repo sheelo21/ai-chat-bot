@@ -102,4 +102,36 @@
   .glass-panel {
     @apply bg-card/80 backdrop-blur-sm border border-border/50 shadow-sm;
   }
+  
+  .fade-in {
+    animation: fadeIn 0.3s ease-in-out;
+  }
+  
+  .slide-up {
+    animation: slideUp 0.3s ease-out;
+  }
+  
+  .hover-lift {
+    @apply transition-transform duration-200 hover:scale-[1.02];
+  }
+  
+  .loading-skeleton {
+    @apply animate-pulse bg-muted;
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { 
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to { 
+    opacity: 1;
+    transform: translateY(0);
+  }
 }

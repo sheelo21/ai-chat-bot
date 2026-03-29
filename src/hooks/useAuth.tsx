@@ -24,8 +24,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // 管理者チェック - 固定の管理者メールアドレスで判定
-  const isAdmin = session?.user?.email === 'admin@example.com';
+  // 管理者チェック - 現在は全ユーザーが管理者権限を持つ
+  const isAdmin = session?.user ? true : false;
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
