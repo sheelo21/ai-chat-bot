@@ -240,9 +240,9 @@ const Dashboard = () => {
                       <Label>説明（任意）</Label>
                       <Textarea value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder="プロジェクトの概要" />
                     </div>
-                  <Button type="submit" className="w-full" disabled={creating}>
-                    作成
-                  </Button>
+                    <Button type="submit" className="w-full" disabled={creating}>
+                      作成
+                    </Button>
                 </form>
               </DialogContent>
             </Dialog>
